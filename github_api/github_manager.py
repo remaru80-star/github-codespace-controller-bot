@@ -7,6 +7,17 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+# Bot's internal size labels -> real GitHub Codespaces machine identifiers.
+# GitHub rejects the create call outright if "machine" isn't one of these
+# (or isn't offered for that repo) - sending 'medium' / 'standard_4_core_16gb_32gb'
+# like this code used to do always failed.
+MACHINE_TYPE_MAP = {
+    'small': 'basicLinux32gb',
+    'medium': 'standardLinux32gb',
+    'large': 'premiumLinux',
+    'xlarge': 'largePremiumLinux',
+}
+
 
 class GitHubManager:
     """GitHub API manager for handling Codespace operations"""
@@ -67,7 +78,7 @@ class GitHubManager:
             logger.error(f"Error in fork repository: {str(e)}")
             return None
     
-    async def create_codespace(self, repo_full_name: str, machine_type: str = 'standard_4_core_16gb_32gb') -> Optional[Dict[str, Any]]:
+    async def create_codespace(self, repo_full_name: str, machine_type: str = 'medium') -> Optional[Dict[str, Any]]:
         """Create a Codespace for a repository"""
         try:
             loop = asyncio.get_event_loop()
@@ -82,6 +93,35 @@ class GitHubManager:
             logger.error(f"Error creating Codespace: {str(e)}")
             return None
     
+    async def get_available_machines(self, repo_full_name: str) -> list:
+        """List machine types GitHub actually offers for this repo"""
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, self._sync_get_available_machines, repo_full_name)
+        except Exception as e:
+            logger.error(f"Error listing machines: {str(e)}")
+            return []
+
+    def _sync_get_available_machines(self, repo_full_name: str) -> list:
+        try:
+            import requests
+
+            headers = {
+                'Accept': 'application/vnd.github+json',
+                'Authorization': f'Bearer {self.token}',
+                'X-GitHub-Api-Version': '2022-11-28'
+            }
+            url = f"https://api.github.com/repos/{repo_full_name}/codespaces/machines"
+            response = requests.get(url, headers=headers, timeout=30)
+
+            if response.status_code == 200:
+                return [m['name'] for m in response.json().get('machines', [])]
+            logger.error(f"Failed to list machines: {response.status_code} - {response.text}")
+            return []
+        except Exception as e:
+            logger.error(f"Error in list machines: {str(e)}")
+            return []
+
     def _sync_create_codespace(self, repo_full_name: str, machine_type: str) -> Optional[Dict[str, Any]]:
         """Synchronous create Codespace operation"""
         try:
@@ -90,7 +130,6 @@ class GitHubManager:
             
             # Create Codespace via REST API (PyGithub doesn't fully support Codespaces yet)
             # Using direct HTTP request through PyGithub's requester
-            import json
             import requests
             
             headers = {
@@ -98,11 +137,21 @@ class GitHubManager:
                 'Authorization': f'Bearer {self.token}',
                 'X-GitHub-Api-Version': '2022-11-28'
             }
-            
-            data = {
-                'machine': machine_type,
-                'branch': repo_obj.default_branch
-            }
+
+            # Resolve our internal label ('small'/'medium'/...) to a real GitHub
+            # machine id, then confirm GitHub actually offers it for this repo.
+            # Fall back to whatever is available rather than sending a value
+            # GitHub will reject.
+            available = self._sync_get_available_machines(repo_full_name)
+            resolved_machine = MACHINE_TYPE_MAP.get(machine_type, machine_type)
+            if available and resolved_machine not in available:
+                logger.info(f"Machine '{resolved_machine}' not offered for {repo_full_name}, "
+                            f"available: {available}. Falling back to '{available[0]}'.")
+                resolved_machine = available[0]
+
+            data = {'branch': repo_obj.default_branch}
+            if resolved_machine:
+                data['machine'] = resolved_machine
             
             url = f"https://api.github.com/repos/{repo_full_name}/codespaces"
             response = requests.post(url, headers=headers, json=data, timeout=30)
