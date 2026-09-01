@@ -252,55 +252,64 @@ Customize these limits to receive alerts before exceeding your GitHub billing al
 
 async def handle_token_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle GitHub token input from user"""
+    # Check if this message is actually for token input
+    if context.user_data.get('action') != 'add_github_token':
+        # Not a token input, let other handlers process it
+        return
+    
     user_id = update.effective_user.id
     token = update.message.text.strip()
     
-    if context.user_data.get('action') == 'add_github_token':
-        # Validate token format (GitHub tokens start with ghp_ or gho_)
-        if not (token.startswith('ghp_') or token.startswith('gho_') or token.startswith('github_pat_')):
-            keyboard = [
-                [InlineKeyboardButton("🔄 Try Again", callback_data="add_token")],
-                [InlineKeyboardButton("⬅️ Back", callback_data="manage_tokens")],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                text="❌ **Invalid Token Format**\n\nGitHub tokens should start with:\n- `ghp_` (Personal Access Token)\n- `gho_` (OAuth token)\n- `github_pat_` (Fine-grained token)\n\nPlease check your token and try again.",
-                reply_markup=reply_markup
-            )
-            return
+    logger.info(f"🔑 Processing GitHub token input from user {user_id}")
+    
+    # Validate token format (GitHub tokens start with ghp_ or gho_)
+    if not (token.startswith('ghp_') or token.startswith('gho_') or token.startswith('github_pat_')):
+        keyboard = [
+            [InlineKeyboardButton("🔄 Try Again", callback_data="add_token")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="manage_tokens")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Validate token length
-        if len(token) < 20:
-            await update.message.reply_text(
-                text="❌ **Token Too Short**\n\nGitHub tokens are typically 40+ characters long. Please check your token."
-            )
-            return
+        await update.message.reply_text(
+            text="❌ **Invalid Token Format**\n\nGitHub tokens should start with:\n- `ghp_` (Personal Access Token)\n- `gho_` (OAuth token)\n- `github_pat_` (Fine-grained token)\n\nPlease check your token and try again.",
+            reply_markup=reply_markup
+        )
+        return
+    
+    # Validate token length
+    if len(token) < 20:
+        await update.message.reply_text(
+            text="❌ **Token Too Short**\n\nGitHub tokens are typically 40+ characters long. Please check your token."
+        )
+        return
+    
+    # Add token to user
+    logger.info(f"✅ Adding GitHub token for user {user_id}")
+    success = await db.add_github_token(user_id, token)
+    context.user_data['action'] = None
+    
+    if success:
+        keyboard = [
+            [InlineKeyboardButton("✅ View All Tokens", callback_data="manage_tokens")],
+            [InlineKeyboardButton("📱 My Applications", callback_data="my_apps")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Add token to user
-        success = await db.add_github_token(user_id, token)
-        context.user_data['action'] = None
+        await update.message.reply_text(
+            text="✅ **GitHub Token Added Successfully!**\n\nYour token is now active and ready to use for controlling Codespaces.\n\n🎉 You can now:\n- Create applications\n- Launch Codespaces\n- Manage your development environments",
+            reply_markup=reply_markup
+        )
+        logger.info(f"✅ Token successfully added for user {user_id}")
+    else:
+        keyboard = [
+            [InlineKeyboardButton("🔄 Try Again", callback_data="add_token")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="manage_tokens")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        if success:
-            keyboard = [
-                [InlineKeyboardButton("✅ View All Tokens", callback_data="manage_tokens")],
-                [InlineKeyboardButton("📱 My Applications", callback_data="my_apps")],
-                [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                text="✅ **GitHub Token Added Successfully!**\n\nYour token is now active and ready to use for controlling Codespaces.\n\n🎉 You can now:\n- Create applications\n- Launch Codespaces\n- Manage your development environments",
-                reply_markup=reply_markup
-            )
-        else:
-            keyboard = [
-                [InlineKeyboardButton("🔄 Try Again", callback_data="add_token")],
-                [InlineKeyboardButton("⬅️ Back", callback_data="manage_tokens")],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                text="❌ **Failed to Add Token**\n\nSomething went wrong. Please try again.",
-                reply_markup=reply_markup
-            )
+        await update.message.reply_text(
+            text="❌ **Failed to Add Token**\n\nSomething went wrong. Please try again.",
+            reply_markup=reply_markup
+        )
+        logger.error(f"❌ Failed to add token for user {user_id}")
