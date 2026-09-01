@@ -44,7 +44,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
 
-async def main():
+def main():
     """Start the bot"""
     # Get token from environment
     token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -89,13 +89,13 @@ async def main():
 
     logger.info("🤖 GitHub Codespace Controller Bot starting...")
     
-    # Start the bot
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Start the bot - application.run_polling() manages its own event loop
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == '__main__':
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
         logger.info("\n⏹️  Bot stopped by user")
     except Exception as e:
