@@ -90,8 +90,12 @@ def main():
     # Add settings callback handlers
     application.add_handler(CallbackQueryHandler(settings_handler.settings_command, pattern="^settings$"))
     application.add_handler(CallbackQueryHandler(settings_handler.manage_tokens, pattern="^manage_tokens$"))
-    application.add_handler(CallbackQueryHandler(settings_handler.view_billing, pattern="^view_billing$"))
     application.add_handler(CallbackQueryHandler(settings_handler.add_token, pattern="^add_token$"))
+    application.add_handler(CallbackQueryHandler(settings_handler.switch_token, pattern="^switch_token_"))
+    application.add_handler(CallbackQueryHandler(settings_handler.delete_token, pattern="^delete_token_"))
+    application.add_handler(CallbackQueryHandler(settings_handler.confirm_delete_token, pattern="^confirm_delete_"))
+    application.add_handler(CallbackQueryHandler(settings_handler.view_billing, pattern="^view_billing$"))
+    application.add_handler(CallbackQueryHandler(settings_handler.usage_limits, pattern="^usage_limits$"))
     
     # Add message handlers for text input
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start_handler.handle_user_input))
