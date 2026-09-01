@@ -38,7 +38,7 @@ async def start_codespace(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     await query.edit_message_text(
-        text=f"⏳ Starting Codespace for **{app['name']}**...\n\nThis may take a minute..."
+        text=f"⏳ **Starting Codespace for {app['name']}...**\n\nThis may take 2-3 minutes. Please wait...\n\n1️⃣ Forking repository...\n2️⃣ Creating Codespace...\n3️⃣ Configuring environment..."
     )
     
     try:
@@ -51,8 +51,9 @@ async def start_codespace(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not success:
             await query.edit_message_text(
-                text=f"❌ Error: {result}"
+                text=f"❌ **Error Creating Codespace**\n\n{result}\n\n**Troubleshooting:**\n- Check if your GitHub token is valid\n- Ensure you have permission to fork the repository\n- Try again later if GitHub is experiencing issues"
             )
+            logger.error(f"Failed to create Codespace: {result}")
             return
         
         # Get environment variables and build/start commands
@@ -60,26 +61,32 @@ async def start_codespace(update: Update, context: ContextTypes.DEFAULT_TYPE):
         build_cmd = app.get('build_command')
         start_cmd = app.get('start_command')
         
-        message = f"""✅ **Codespace Started!**
+        message = f"""✅ **Codespace Started Successfully!**
 
-**Codespace Details:**
-- Name: {result['codespace_name']}
+🖥️ **Codespace Details:**
+- Name: `{result['codespace_name']}`
 - URL: [Open in Browser]({result['codespace_url']})
-- Status: Running
+- Status: 🟢 Running
 - CPU: 4-Core
 - RAM: 16GB
 - Storage: 32GB
 
-**Configuration:**
-- Repository: {app.get('repo_url')}
-- Build Command: {build_cmd or 'Not set'}
-- Start Command: {start_cmd or 'Not set'}
-- Docker: {'Enabled' if app.get('docker_enabled') else 'Disabled'}
+📦 **Configuration:**
+- Repository: `{app.get('repo_url')}`
+- Docker: {'🐳 Enabled' if app.get('docker_enabled') else '❌ Disabled'}
 - Environment Variables: {len(env_vars)} set
-"""
+
+⚙️ **Next Steps in Codespace Terminal:**
+1. Run: `python3 -m pip install --upgrade pip`"""
         
-        if app.get('docker_enabled') or (build_cmd or start_cmd):
-            message += "\n⏳ Running build and start commands..."
+        if build_cmd:
+            message += f"\n2. Run: `{build_cmd}`"
+            if start_cmd:
+                message += f"\n3. Run: `{start_cmd}`"
+        elif start_cmd:
+            message += f"\n2. Run: `{start_cmd}`"
+        
+        message += "\n\n💡 **Tip:** Copy each command from above and paste into the Codespace terminal."
         
         keyboard = [
             [InlineKeyboardButton("🌐 Open Codespace", url=result['codespace_url'])],
@@ -94,11 +101,19 @@ async def start_codespace(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup,
             disable_web_page_preview=False
         )
+        
+        # Log the successful creation
+        await db.create_codespace_log(
+            update.effective_user.id,
+            app_id,
+            result.get('codespace_id', ''),
+            {'name': result['codespace_name'], 'web_url': result['codespace_url']}
+        )
     
     except Exception as e:
         logger.error(f"Error starting Codespace: {str(e)}")
         await query.edit_message_text(
-            text=f"❌ Error starting Codespace: {str(e)}"
+            text=f"❌ **Unexpected Error**\n\n{str(e)}\n\nPlease try again or contact support."
         )
 
 
@@ -151,12 +166,12 @@ async def stop_codespace(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await query.edit_message_text(
-                text=f"✅ Codespace stopped successfully.",
+                text=f"✅ **Codespace stopped successfully**\n\nYou can restart it anytime.",
                 reply_markup=reply_markup
             )
         else:
             await query.edit_message_text(
-                text="❌ Failed to stop Codespace."
+                text="❌ Failed to stop Codespace. Please try again."
             )
     
     except Exception as e:
@@ -195,17 +210,32 @@ async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Get Codespace status
         codespace = await gh_manager.get_codespace(forked_repo, codespace_name)
         
+        if not codespace:
+            await query.edit_message_text(
+                text="❌ Could not fetch Codespace status. It may have been deleted."
+            )
+            return
+        
+        status_icon = "🟢" if codespace.get('state') == 'Available' else "🟡"
+        
         status_text = f"""📊 **Codespace Status**
 
 **Application:** {app['name']}
-**Codespace:** {codespace_name}
-**Status:** {codespace.get('state', 'Unknown')}
-**URL:** [Open]({codespace.get('web_url')})
+**Codespace:** `{codespace_name}`
+**Status:** {status_icon} {codespace.get('state', 'Unknown')}
 **Created:** {codespace.get('created_at', 'N/A')}
-**Last Used:** {codespace.get('last_used_at', 'N/A')}
-"""
+
+[🌐 Open Codespace]({codespace.get('web_url')})
+        """
         
-        await query.edit_message_text(text=status_text)
+        keyboard = [
+            [InlineKeyboardButton("🌐 Open Codespace", url=codespace.get('web_url'))],
+            [InlineKeyboardButton("⏹️ Stop", callback_data=f"stop_codespace_{app_id}")],
+            [InlineKeyboardButton("🔄 Refresh", callback_data=f"check_status_{app_id}")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text=status_text, reply_markup=reply_markup, disable_web_page_preview=True)
     
     except Exception as e:
         logger.error(f"Error checking status: {str(e)}")
@@ -223,20 +253,35 @@ async def _fork_and_create_codespace(app_id: str, github_token: str, repo_url: s
         parts = repo_url.strip('/').split('/')
         owner, repo = parts[-2], parts[-1].replace('.git', '')
         
+        logger.info(f"Starting fork process for {owner}/{repo}")
+        
         # Fork repository
         forked_repo = await gh_manager.fork_repository(owner, repo)
         
         if not forked_repo:
-            return False, "Failed to fork repository"
+            return False, "Failed to fork repository. Check if it exists and you have permission."
         
-        # Create Codespace with 4-core, 16GB, 32GB storage
+        logger.info(f"Fork successful: {forked_repo['full_name']}")
+        
+        # Create Codespace with 4-core, 16GB, 32GB storage (medium machine)
+        logger.info(f"Creating Codespace for {forked_repo['full_name']}")
         codespace = await gh_manager.create_codespace(
             forked_repo['full_name'],
-            machine_type='standard_4_core_16gb_32gb'
+            machine_type='medium'  # 4-core, 16GB RAM, 32GB storage
         )
         
         if not codespace:
-            return False, "Failed to create Codespace"
+            return False, "Failed to create Codespace. The machine type may not be available for this repository. Try a different repository."
+        
+        logger.info(f"Codespace created: {codespace['name']}")
+        
+        # Update application with codespace info
+        await db.update_application(app_id, {
+            'forked_repo': forked_repo['full_name'],
+            'codespace_id': codespace['id'],
+            'codespace_name': codespace['name'],
+            'status': 'running'
+        })
         
         return True, {
             'codespace_url': codespace['web_url'],
