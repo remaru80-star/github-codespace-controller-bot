@@ -103,9 +103,29 @@ async def handle_docker_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     await db.update_application(app_id, {'docker_enabled': docker_enabled})
     
     status_text = "🐳 Docker: Enabled" if docker_enabled else "❌ Docker: Disabled"
-    await query.edit_message_text(
-        text=f"✅ {status_text}\n\nConfiguration complete! Ready to start your Codespace."
-    )
+    
+    # Show configuration menu after Docker choice
+    app = await db.get_application(app_id)
+    config_text = f"⚙️ **{app['name']} Configuration**\n\n"
+    config_text += f"✅ {status_text}\n\n"
+    config_text += f"Repository: {app.get('repo_url', '❌ Not set')}\n"
+    config_text += f"Env Vars: {'✅ ' + str(len(app.get('env_vars', {}))) + ' set' if app.get('env_vars') else '❌ Not set'}\n"
+    config_text += f"Build Cmd: {'✅ Set' if app.get('build_command') else '❌ Not set'}\n"
+    config_text += f"Start Cmd: {'✅ Set' if app.get('start_command') else '❌ Not set'}\n"
+    config_text += f"Docker: {'🐳 Enabled' if app.get('docker_enabled') else '❌ Disabled'}\n\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("🔗 Set Repository", callback_data=f"set_repo_{app_id}")],
+        [InlineKeyboardButton("🌍 Set Environment Variables", callback_data=f"set_env_{app_id}")],
+        [InlineKeyboardButton("🔨 Set Build Command", callback_data=f"set_build_{app_id}")],
+        [InlineKeyboardButton("▶️ Set Start Command", callback_data=f"set_start_{app_id}")],
+        [InlineKeyboardButton("🐳 Docker Implementation", callback_data=f"set_docker_{app_id}")],
+        [InlineKeyboardButton("✅ Review & Start", callback_data=f"review_{app_id}")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text=config_text, reply_markup=reply_markup)
 
 
 async def fork_and_open_codespace(user_id: int, app_id: str, github_token: str):
