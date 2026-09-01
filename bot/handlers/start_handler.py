@@ -46,7 +46,7 @@ What would you like to do?
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /help command"""
+    """Handle /help command and help_menu callback"""
     help_text = """
 📖 **Help - Available Commands**
 
@@ -84,19 +84,38 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 For more information, visit: https://github.com/OneAvobeAll/github-codespace-controller-bot
     """
     
-    await update.effective_message.reply_text(help_text)
+    # Handle both command and callback query
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        
+        keyboard = [
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text=help_text, reply_markup=reply_markup)
+    else:
+        await update.effective_message.reply_text(help_text)
 
 
 async def list_apps(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List user's applications"""
+    """List user's applications - handles both command and callback"""
     user_id = update.effective_user.id
+    
+    # Handle callback query
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
     
     apps = await db.get_user_applications(user_id)
     
     if not apps:
-        await update.effective_message.reply_text(
-            "📭 You haven't created any applications yet.\n\nUse /start to create your first app!"
-        )
+        message = "📭 You haven't created any applications yet.\n\nUse /start to create your first app!"
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message)
+        else:
+            await update.effective_message.reply_text(message)
         return
     
     app_list = "📱 **Your Applications:**\n\n"
@@ -116,7 +135,82 @@ async def list_apps(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     
     reply_markup = InlineKeyboardMarkup(buttons)
-    await update.effective_message.reply_text(app_list, reply_markup=reply_markup)
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text=app_list, reply_markup=reply_markup)
+    else:
+        await update.effective_message.reply_text(app_list, reply_markup=reply_markup)
+
+
+async def show_app_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show detailed app configuration"""
+    query = update.callback_query
+    await query.answer()
+    
+    app_id = query.data.split('_')[2]
+    context.user_data['current_app_id'] = app_id
+    
+    app = await db.get_application(app_id)
+    
+    config_text = f"⚙️ **{app['name']} Configuration**\n\n"
+    config_text += f"Repository: {app.get('repo_url', '❌ Not set')}\n"
+    config_text += f"Env Vars: {'✅ ' + str(len(app.get('env_vars', {}))) + ' set' if app.get('env_vars') else '❌ Not set'}\n"
+    config_text += f"Build Cmd: {'✅ Set' if app.get('build_command') else '❌ Not set'}\n"
+    config_text += f"Start Cmd: {'✅ Set' if app.get('start_command') else '❌ Not set'}\n"
+    config_text += f"Docker: {'🐳 Enabled' if app.get('docker_enabled') else '❌ Disabled'}\n\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("🔗 Set Repository", callback_data=f"set_repo_{app_id}")],
+        [InlineKeyboardButton("🌍 Set Environment Variables", callback_data=f"set_env_{app_id}")],
+        [InlineKeyboardButton("🔨 Set Build Command", callback_data=f"set_build_{app_id}")],
+        [InlineKeyboardButton("▶️ Set Start Command", callback_data=f"set_start_{app_id}")],
+        [InlineKeyboardButton("🐳 Docker Implementation", callback_data=f"set_docker_{app_id}")],
+        [InlineKeyboardButton("✅ Review & Start", callback_data=f"review_{app_id}")],
+        [InlineKeyboardButton("📱 My Applications", callback_data="my_apps")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text=config_text, reply_markup=reply_markup)
+
+
+async def handle_review_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle Review & Start button"""
+    query = update.callback_query
+    await query.answer()
+    
+    app_id = query.data.split('_')[1]
+    app = await db.get_application(app_id)
+    
+    # Validate configuration
+    if not app.get('repo_url'):
+        await query.edit_message_text(
+            text="❌ **Configuration Incomplete**\n\nPlease set the GitHub repository URL before starting."
+        )
+        return
+    
+    # Show review summary
+    review_text = f"""
+✅ **Review Configuration**
+
+**Application Name:** {app['name']}
+**Repository:** {app.get('repo_url')}
+**Environment Variables:** {len(app.get('env_vars', {}))} set
+**Build Command:** {app.get('build_command', 'Not set')}
+**Start Command:** {app.get('start_command', 'Not set')}
+**Docker:** {'🐳 Enabled' if app.get('docker_enabled') else '❌ Disabled'}
+
+Ready to launch Codespace? Click below to proceed.
+    """
+    
+    keyboard = [
+        [InlineKeyboardButton("🚀 Start Codespace", callback_data=f"start_codespace_{app_id}")],
+        [InlineKeyboardButton("🔙 Back to Config", callback_data=f"app_details_{app_id}")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text=review_text, reply_markup=reply_markup)
 
 
 async def handle_create_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
