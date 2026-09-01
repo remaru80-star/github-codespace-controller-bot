@@ -96,10 +96,13 @@ def main():
     application.add_handler(CallbackQueryHandler(settings_handler.view_billing, pattern="^view_billing$"))
     application.add_handler(CallbackQueryHandler(settings_handler.usage_limits, pattern="^usage_limits$"))
     
-    # IMPORTANT: Message handlers must be added in priority order
-    # Token input handler MUST come BEFORE general user input handler
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, settings_handler.handle_token_input))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start_handler.handle_user_input))
+    # NOTE: both handlers match the same filter (any plain text). PTB only runs
+    # the FIRST matching handler per group (it `break`s after one match), so
+    # these must be in different groups or handle_user_input never fires -
+    # this was why "Create New App" (and every other text-input step) silently
+    # did nothing.
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, settings_handler.handle_token_input), group=0)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start_handler.handle_user_input), group=1)
 
     # Add error handler
     application.add_error_handler(error_handler)
