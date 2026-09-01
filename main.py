@@ -64,18 +64,31 @@ def main():
     application.add_handler(CommandHandler("myapps", start_handler.list_apps))
     application.add_handler(CommandHandler("settings", settings_handler.settings_command))
     
-    # Add callback query handlers
+    # Add main menu callback handlers
     application.add_handler(CallbackQueryHandler(start_handler.handle_create_app, pattern="^create_app$"))
     application.add_handler(CallbackQueryHandler(start_handler.handle_main_menu, pattern="^main_menu$"))
+    application.add_handler(CallbackQueryHandler(start_handler.list_apps, pattern="^my_apps$"))
+    application.add_handler(CallbackQueryHandler(start_handler.help_command, pattern="^help_menu$"))
+    
+    # Add app management callback handlers
+    application.add_handler(CallbackQueryHandler(start_handler.show_app_details, pattern="^app_details_"))
+    application.add_handler(CallbackQueryHandler(start_handler.handle_review_app, pattern="^review_"))
+    
+    # Add GitHub configuration callback handlers
     application.add_handler(CallbackQueryHandler(github_handler.set_github_repo, pattern="^set_repo_"))
     application.add_handler(CallbackQueryHandler(github_handler.set_env_vars, pattern="^set_env_"))
     application.add_handler(CallbackQueryHandler(github_handler.set_build_cmd, pattern="^set_build_"))
     application.add_handler(CallbackQueryHandler(github_handler.set_start_cmd, pattern="^set_start_"))
     application.add_handler(CallbackQueryHandler(github_handler.set_docker, pattern="^set_docker_"))
     application.add_handler(CallbackQueryHandler(github_handler.handle_docker_choice, pattern="^docker_"))
+    
+    # Add Codespace callback handlers
     application.add_handler(CallbackQueryHandler(codespace_handler.start_codespace, pattern="^start_codespace_"))
     application.add_handler(CallbackQueryHandler(codespace_handler.stop_codespace, pattern="^stop_codespace_"))
     application.add_handler(CallbackQueryHandler(codespace_handler.check_status, pattern="^check_status_"))
+    
+    # Add settings callback handlers
+    application.add_handler(CallbackQueryHandler(settings_handler.settings_command, pattern="^settings$"))
     application.add_handler(CallbackQueryHandler(settings_handler.manage_tokens, pattern="^manage_tokens$"))
     application.add_handler(CallbackQueryHandler(settings_handler.view_billing, pattern="^view_billing$"))
     application.add_handler(CallbackQueryHandler(settings_handler.add_token, pattern="^add_token$"))
