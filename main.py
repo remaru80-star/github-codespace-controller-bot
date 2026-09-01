@@ -2,7 +2,6 @@
 Main entry point for the GitHub Codespace Controller Telegram Bot
 """
 import logging
-import asyncio
 import os
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -97,15 +96,9 @@ def main():
     application.add_handler(CallbackQueryHandler(settings_handler.view_billing, pattern="^view_billing$"))
     application.add_handler(CallbackQueryHandler(settings_handler.usage_limits, pattern="^usage_limits$"))
     
-    # Add message handlers for text input - PRIORITY ORDER MATTERS!
-    # Settings/token handler FIRST (higher priority)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & (lambda u: u.message and 
-            (u.effective_user and (u._bot.get_chat_member.__self__.context.user_data.get('action') == 'add_github_token' if hasattr(u._bot, 'get_chat_member') else True))),
-        settings_handler.handle_token_input
-    ))
-    
-    # General user input handler (lower priority)
+    # IMPORTANT: Message handlers must be added in priority order
+    # Token input handler MUST come BEFORE general user input handler
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, settings_handler.handle_token_input))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start_handler.handle_user_input))
 
     # Add error handler
